@@ -1,4 +1,4 @@
-# CST 89200 Lab  · DHCP, WDS, and PXE
+# CST 89200 Lab   DHCP, WDS, and PXE
 
 ## Shared lab environment
 
