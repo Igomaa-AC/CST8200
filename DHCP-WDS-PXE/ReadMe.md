@@ -1,42 +1,59 @@
-# CST 89200 Lab   DHCP, WDS, and PXE
+# CST 89200 Lab 3 · DHCP, WDS, and PXE
 
-## Shared lab environment
+## What you will build
 
-Use the five VMware Workstation VMs and the NAT VMnet recorded in **Lab 1 – Preparing the Lab Environment**. Find the actual subnet and mask in Virtual Network Editor. Replace `X` with the third octet for your NAT subnet wherever it appears, including in PowerShell examples. Verify the computer names and IP addresses before changing settings, and document any differences.
+- **DHCP.** Install and authorize a DHCP server, configure a scope with an exclusion and a client-specific policy, and prove that your Windows client receives the correct lease and retains its reserved address after renewal.
+- **WDS and PXE.** Install and configure WDS, import a boot image and an install image, then deploy Windows Server 2019 over the network to a blank VMware VM. Verify the installed server boots from its virtual disk.
 
-| Existing VM | Lab 1 IP | Use in these exercises |
-|---|---|---|
-| ServerDC1 | 192.168.X.10 | AD DS and DNS in the existing course domain |
-| ServerDC2 | 192.168.X.11 | Second DC in the same domain for Class 4, if available for that role |
-| ServerDM1 | 192.168.X.20 | IIS and WSUS |
-| ServerDM2 | 192.168.X.21 | Windows containers, firewall, DHCP, WDS and partner DNS |
-| Windows 10 or Windows 11 client | VMware DHCP at baseline | Client tests, Wireshark and interactive PXE boot |
+## Before you start
 
-**Before class.** Lab 1 installs Windows and VMware Tools and captures snapshots. Check whether AD DS, domain membership and any required server roles are already configured. For Classes 2–4, use your existing AD DNS name wherever `corp.example` appears. If the environment is still at the original Lab 1 baseline, the instructor must first configure ServerDC1 as the lab DC and DNS server, join ServerDM1, ServerDM2 and the Windows client where required, and verify DNS and time. ServerDC2 is only added to that domain when appropriate for Class 4. Use elevated PowerShell unless directed otherwise. Check free storage and memory on the existing VMs before staging images and update content.
+Use the existing **ServerDC1**, **ServerDM2** and **Windows 10 or Windows 11 client** on your dedicated VMware NAT VMnet. Create one blank VM for deployment named **WDS-Target**. Keep your existing client and servers available for the DHCP exercises. Use the VMware console throughout the lab.
 
-**Network baseline.** Use the NAT VMnet for Classes 1, 2 and 4. Keep your normal Windows client IP settings and verify the current lease before using a source-restricted firewall rule. Use the existing Windows 10 or Windows 11 Education, Pro, or Enterprise client VM and keep its current computer name. Identify it by that name in DHCP, WSUS, and submitted evidence. Domain members must query the lab AD DNS server. For Class 3, record the VMware and guest settings before temporarily switching the DHCP service on the NAT VMnet. Use VM consoles for address or firmware changes. Where snapshots are suitable, take a new checkpoint of the current disposable member/client VM state. Use the instructor's AD backup and recovery procedure for domain controllers.
+Record the NAT VMnet name, actual subnet and mask, NAT gateway, VMware DHCP setting, your AD DNS domain and the Windows client's current IP and DNS configuration. Record whether IP assignment and DNS assignment are each automatic or manual. Verify ServerDC1 and ServerDM2 have static addresses and ServerDM2 is domain joined and uses ServerDC1 for DNS. Use a lab account authorized to install roles and authorize DHCP in AD.
 
-### Student worksheet
+Use an x64 Windows Server 2019 ISO with both `sources\boot.wim` and `sources\install.wim`. Mount it on **ServerDM2** and record its drive letter. Plan for sufficient free space for both WIM files and a blank target disk of at least 60 GB. Use the course-provided Windows Server 2019 edition and media.
 
-Record your VMware NAT VMnet, actual IPv4 subnet and mask, AD DNS name, and Windows client computer name before starting. Substitute your own values for every `192.168.X.*` and `corp.example` example. In Classes 2–4, confirm the Windows client can resolve the AD domain through the lab DNS server.
+## Part A · Install and test DHCP
 
-## Lease an address and PXE boot the Windows client VM
+1. On **ServerDM2**, open **Server Manager → Manage → Add Roles and Features**. Choose **Role-based or feature-based installation**, select ServerDM2, select **DHCP Server**, accept its management tools, and complete the installation. In Server Manager, select **Complete DHCP configuration** in the notification flag and authorize the server with your assigned lab credentials. Open **Tools → DHCP**, refresh, and confirm the server is authorized. If authorization is unavailable, check domain DNS and your assigned permissions before continuing.
+2. In **DHCP Manager → ServerDM2 → IPv4**, create a scope named **Deployment Lab LAN**. Use the actual NAT subnet mask. For a /24 lab, use `192.168.X.100` through `192.168.X.149` and exclude `192.168.X.140–192.168.X.149`. Replace X with the actual third octet. Check the pool and exclusion against the existing VMnet configuration and static IPs. If your mask differs, use an instructor-approved range in the same subnet. Configure scope options **003 Router** with the VMware NAT gateway, **006 DNS Servers** with ServerDC1, and **015 DNS Domain Name** with your AD DNS domain. Leave the scope inactive until the next step.
+3. On the VMware host, open **Virtual Network Editor**, select your dedicated NAT VMnet and clear **Use local DHCP service to distribute IP address to VMs**. Keep the network in NAT mode. If the VMnet is shared, use an instructor-assigned isolated VMnet instead. Then, on **ServerDM2**, right-click **Deployment Lab LAN** and select **Activate**.
+4. On the **Windows client**, use automatic IPv4 and DNS. If Wireshark is available, start a capture on the active VM adapter before renewing. Run the commands below and verify the DHCP server is ServerDM2, the address is inside the available pool, and the gateway and DNS server match the scope. In DHCP Manager, match the client to its entry under **Address Leases**. A capture can show Discover, Offer, Request and Acknowledge. If it contains only Request and Acknowledge, label the exchange as a renewal.
 
-**Before you start.** Open the Windows client through the VMware console. Record whether its IPv4 address and DNS settings are automatic or manual. Confirm the NAT VMnet is dedicated to the exercise and that the instructor has validated an interactive boot. Keep the existing VM firmware type, virtual disk and WDS security settings. Leave hands-free deployment disabled.
+   ```powershell
+   ipconfig /release
+   ipconfig /renew
+   ipconfig /all
+   ```
 
-1. Record the NAT VMnet name, subnet mask, gateway, VMware DHCP settings, and the Windows client's IPv4/DNS configuration. Verify ServerDC1 and ServerDM2 have static addresses and that ServerDM2 can resolve the AD domain. On ServerDM2, verify DHCP and WDS are staged. Authorize the DHCP server in AD if required, but leave the Windows DHCP scope inactive for now.
-2. In VMware Virtual Network Editor, select the NAT VMnet from Lab 1 and temporarily clear **Use local DHCP service to distribute IP address to VMs** on that VMnet. Keep the VMnet in NAT mode. Pause other DHCP-dependent VMs on that VMnet for the exercise. If other workloads need that VMware DHCP service, use the instructor's isolated VMware network and address plan instead. Enable only one DHCP service on the exercise network at a time.
-3. On ServerDM2, create and activate the IPv4 scope with the actual NAT subnet mask. On a /24 network, use `192.168.X.100–192.168.X.149` after checking for conflicts with static addresses and NAT infrastructure. For a different mask, use the instructor-approved range in that subnet. Set option 006 to `192.168.X.10`, 015 to the existing AD DNS name and 003 to the recorded VMware NAT gateway.
-4. On the Windows client, start Wireshark with the display filter `dhcp`. With IPv4 and DNS set to automatic, run `ipconfig /release` and `ipconfig /renew` from its console. Verify the lease and options in `ipconfig /all` and match the client ID in DHCP Manager. In DHCP Manager, open the lab scope’s **Address Leases**, right-click the active client lease, and select **Add to Reservation**. Verify it under **Reservations**, renew on the client, and confirm the same address. In `ipconfig /all`, verify that DHCP comes from ServerDM2 and DNS points to ServerDC1. If a different DHCP server appears, stop and check the selected VMnet and VMware DHCP setting before continuing. If the capture shows only Request and ACK, record that observation and use the initial exchange from the instructor's trace for the full sequence.
-5. On ServerDM2, verify the staged x64 Windows Server 2019 boot image. Since DHCP and WDS are on the same server, check **Do not listen on DHCP ports** and **Configure DHCP options to indicate that this is also a PXE server** in WDS server properties. Verify the PXE response policy and use an interactive boot prompt. The instructor should confirm that the lab's existing Windows client firmware and NIC combination can boot the staged image.
-6. Shut down the Windows client. In VMware Workstation, power it on to firmware and choose the virtual network adapter as a one-time boot device. Respond to the network boot prompt and select the staged image if prompted. Use the staged Windows Server 2019 boot image with either client OS. Stop at Windows PE or the first Windows Setup screen without starting an installation. Power off from VMware Workstation and boot normally from the virtual disk. If the existing VM cannot PXE boot, use the instructor's recorded boot trace for that portion and submit your own live DHCP evidence.
-7. On ServerDM2, deactivate the lab Windows DHCP scope and confirm it is inactive. Stop the lab WDS service if you started it for this exercise. Then restore the VMware DHCP setting on the NAT VMnet. Restore the Windows client's original IPv4/DNS settings, renew its VMware lease if applicable, and verify AD DNS and client connectivity using the original lab configuration.
+5. In **DHCP Manager → Deployment Lab LAN → Policies**, create a policy named **Client Suffix Test**. Match the Windows client's **MAC Address** using the Physical Address from `ipconfig /all` on the active adapter. Use the same scope pool and set policy option **015 DNS Domain Name** to `dhcp-test.example`. Leave router and DNS server options inherited. Release and renew on the client, then record the connection-specific DNS suffix from `ipconfig /all`. Disable the test policy, release and renew again, and verify the original lab AD suffix returns before continuing. Keep the client joined to its existing domain.
+6. Under **Address Leases**, right-click the Windows client's active lease and select **Add to Reservation**. Confirm its IP address and client identifier under **Reservations**. On the Windows client, release and renew again. Verify that it receives the reserved address from ServerDM2. Leave the Windows DHCP scope active for Part B.
 
-**Submit.** DHCP manager lease and reservation evidence, the Wireshark exchange, PXE/Windows PE evidence, and confirmation that VMware DHCP and the original Windows client DNS settings were restored.  
-**Troubleshoot.** the Windows client receives a valid address in firmware but cannot download the boot program. Identify the completed phase and the next three checks.
+## Part B · Configure WDS and deploy a server
 
-## Submission checklist
+1. On **ServerDM2**, use **Add Roles and Features** to install **Windows Deployment Services** with both **Deployment Server** and **Transport Server**. Open **Server Manager → Tools → Windows Deployment Services**. Under **Servers**, right-click ServerDM2 and choose **Configure Server**.
+2. Choose **Integrated with Active Directory**. Select a local NTFS path for **RemoteInstall** with room for the images. Follow the wizard's same-server DHCP settings. In **ServerDM2 → Properties → DHCP**, verify **Do not listen on DHCP ports** and **Configure DHCP options to indicate that this is also a PXE server**. These settings allow DHCP to listen on UDP 67 while advertising the WDS PXE service.
+3. In the **PXE Response** settings, allow responses to the lab target on your isolated VMnet. If you select the option to require administrator approval for unknown clients, approve **WDS-Target** under **Pending Devices** when it network-boots. Use interactive deployment and keep WDS hands-free deployment disabled.
+4. Under **Boot Images**, select **Add Boot Image**. Browse to `sources\boot.wim` on the mounted Windows Server 2019 ISO and name the image **Server 2019 Setup**. Under **Install Images**, create an image group named **Server 2019 Lab**. Use **Add Install Image** to import `sources\install.wim` and select the Windows Server 2019 edition specified for class. Verify that both images are listed, then start WDS from the server's **All Tasks** menu if it is stopped.
+5. In VMware Workstation, create **WDS-Target** as an x64 Windows Server 2019 VM. Choose **I will install the operating system later**, create a new blank virtual disk and attach one virtual NIC to the dedicated lab VMnet. Use UEFI firmware and a NIC that supports PXE. Leave the target's virtual CD/DVD disconnected so that the deployment comes from the network.
+6. Power **WDS-Target** on to firmware and choose its network adapter as the one-time boot device. Respond to the PXE prompt, approve the device if required, and choose **Server 2019 Setup**. When Windows Setup opens, follow the interactive prompts. If prompted to authenticate, use your assigned lab domain deployment account. Select the imported Windows Server 2019 edition and the **blank disk in WDS-Target**. Complete installation and let the VM boot from disk after the first restart. If it returns to PXE, choose its virtual disk from the firmware menu.
+7. Complete first sign-in on **WDS-Target**. Run the commands below. Confirm it started from its virtual disk with the CD/DVD disconnected and that Windows reports the expected edition. Record the guest hostname shown by the command, which may differ from the VMware display name.
 
-Lease options, Wireshark exchange, reservation, PXE result or assigned trace, and confirmation that the original network settings were restored.
+   ```powershell
+   hostname
+   Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber
+   ```
 
-Label each item with the VM name. Include your answer to the lab’s troubleshooting question. Identify any instructor-provided trace or report and explain what it shows.
+## Restore the lab network
+
+1. Save your evidence and shut down **WDS-Target**.
+2. On **ServerDM2**, stop the WDS service and deactivate **Deployment Lab LAN**. Confirm the Windows scope is inactive before restoring VMware DHCP.
+3. Restore the original VMware DHCP setting on the NAT VMnet and the original IPv4 and DNS settings on the existing Windows client. Renew its lease if it normally uses DHCP. Verify the client reaches ServerDC1 and resolves the lab AD domain.
+
+## What to submit
+
+- **DHCP:** Scope range, exclusion and options, the lease from ServerDM2, evidence that the policy changed the DNS suffix and that disabling it restored the original value, and the reserved IP before and after renewal. Include the Wireshark exchange if captured.
+- **WDS:** Boot and install images listed on ServerDM2, evidence of PXE or Windows Setup on WDS-Target, and the hostname and Windows edition after it boots from disk.
+- **Cleanup:** Evidence of the deactivated Windows DHCP scope and restored VMware and client network settings.
+
+If the target gets a DHCP address but never reaches Setup, record the last screen or error. Check WDS service state, the PXE response or approval policy, the NIC and firmware mode, and the boot image. If Setup opens but shows no install image, check the imported edition, image group, and deployment account. Report the phase reached and evidence collected if a blocker prevents completion.
