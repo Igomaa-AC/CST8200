@@ -1,4 +1,4 @@
-# CST 89200 Lab 1 · Logging, Windows Containers, and Firewall
+# Logging, Windows Containers, and Firewall
 
 ## Shared lab environment
 

@@ -1,4 +1,4 @@
-# CST 89200 Lab 4 · Advanced DNS and Domain Migration
+#  Advanced DNS and Domain Migration
 
 ## Shared lab environment
 
