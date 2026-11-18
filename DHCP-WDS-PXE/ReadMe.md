@@ -1,4 +1,4 @@
-# CST 8200 Lab 6 · DHCP, WDS, and PXE
+# DHCP, WDS, and PXE
 
 ## What you will build
 
